@@ -1,0 +1,86 @@
+const yaml = require('yaml');
+const fs = require('fs');
+const postmanToOpenApi = require('postman-to-openapi');
+const core = require('@actions/core');
+const github = require('@actions/github');
+
+const postmanCollection = core.getInput('postman_collection_file');
+const outputFilePath = './openapi.yaml';
+const outputFilePath_with_integration= './openapi_withvpclink.yaml';
+
+const service_name=core.getInput('service_name');
+const env= "refs/heads/dev"
+// core.getInput('branch_name');
+// Read the Swagger file
+postmanToOpenApi(postmanCollection, outputFilePath, { defaultTag: 'General' })
+    .then(openapi => {
+        // console.log(`OpenAPI specs: ${openapi}`)
+        var openapiDoc=yaml.parse(openapi);
+        const addAmazonIntegration = (path, method, integrationConfig) => {
+          if (!openapiDoc.paths[path]) {
+            console.error(`Path ${path} not found in the OpenAPI document.`);
+            return;
+          }
+          if (!openapiDoc.paths[path][method]) {
+            console.error(`Method ${method} not found for path ${path} in the OpenAPI document.`);
+            return;
+          }
+          openapiDoc.paths[path][method]['x-amazon-apigateway-integration'] = integrationConfig;
+        };
+        for (var path in openapiDoc.paths) {
+          for (var method in openapiDoc.paths[path]) {
+            var integrationConfig_dev =  {
+              type: "http",
+              httpMethod: method.toUpperCase(),
+              uri: "https://staging.trella.dev/"+service_name+ path, 
+              connectionId: "s7zsvv",
+              responses: {
+                default: {
+                  statusCode: "200"
+                }
+              },
+              passthroughBehavior : "when_no_match",
+              connectionType : "VPC_LINK"
+            };
+            var integrationConfig_prod =  {
+              type: "http",
+              httpMethod: method.toUpperCase(),
+              uri: "https://prod.trella.dev/"+service_name+ path, 
+              connectionId: "NOTDEFINEDYET",
+              responses: {
+                default: {
+                  statusCode: "200"
+                }
+              },
+              passthroughBehavior : "when_no_match",
+              connectionType : "VPC_LINK"
+            };
+            if (['get', 'post', 'put', 'delete', 'patch', 'options', 'head'].includes(method)) {
+              // depending on the branch name we will select which integrationconfig will be utilized
+              console.log(env)
+              if (env=="refs/heads/master"){
+                var integrationConfig= integrationConfig_prod;
+              }
+              else if (env=="refs/heads/dev"){
+                var integrationConfig= integrationConfig_dev;
+              }
+              else {
+                console.log("thanks to note that the conversion failed please merge on dev or master branch! ")
+                process.exit(1);
+              }
+              addAmazonIntegration(path, method, integrationConfig);
+            }
+          }
+        }
+        const newFileContents = yaml.stringify(openapiDoc);
+        fs.writeFileSync(outputFilePath_with_integration, newFileContents, 'utf8');
+        console.log(`OpenAPI specs: ${openapiDoc}`)
+        console.log(`Updated OpenAPI document saved as ${outputFilePath_with_integration}`);
+        core.setOutput("openapi_with_integration", outputFilePath_with_integration);
+    })
+    .catch(err => {
+        console.log(err)
+        core.setFailed(err);
+    })
+
+   
