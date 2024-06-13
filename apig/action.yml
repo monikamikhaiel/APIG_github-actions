@@ -1,0 +1,84 @@
+name: 'Upload swagger to APIG'
+description: 'Sync APIs in APIG'
+inputs:
+  service_name:
+    description: 'REST API name , the service name '
+    required: true
+  aws_region:
+    description: 'aws region'
+    required: true
+  repo_name:
+    description: 'reposository name'
+    required: true
+  certificat_arn:
+    description: 'cert for the created domain name '
+  openapi_file_path: 
+    description: 'path of the outputfile this one will vansih as soon as the action is done '
+
+runs:
+  using: "composite"
+  
+  steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        if: github.ref == 'refs/heads/master'
+        with:
+          role-to-assume: arn:aws:iam::063605733848:role/github-actions-apig-role
+          aws-region: ${{ inputs.aws_region }}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        if: github.ref == 'refs/heads/dev'
+        with:
+          role-to-assume: arn:aws:iam::653511765142:role/github-actions-apig-role
+          aws-region: ${{ inputs.aws_region }}        
+
+      - name: Manage APIG resources in preprod
+        shell: bash
+        if: github.ref == 'refs/heads/dev'
+        run: |
+         # check if api exists 
+         rest_api_id=$(aws apigateway get-rest-apis --query 'items[?name==`${{inputs.service_name}}`].id'| tr -d '"'| tr -d '['| tr -d ']'| tr -d '\n'|  tr -d '\r')
+         echo $rest_api_id
+         branch_name=$(echo ${{github.ref}} | cut -f 3 -d '/')
+         if [[ -n "$rest_api_id" ]]; then
+          echo "API already exists just overwriting paths..."
+          aws apigateway put-rest-api --rest-api-id ${rest_api_id[0]} --region ${{inputs.aws_region}} --cli-binary-format raw-in-base64-out  --no-fail-on-warnings --mode overwrite --body 'file://${{ inputs.openapi_file_path }}' 
+          echo "API paths are overwritten , updating the $branch_name stage ..."
+          aws apigateway create-deployment --rest-api-id ${rest_api_id[0]} --stage-name $branch_name 
+         else
+          echo "${{inputs.service_name}} is not found in the current environment , creating..."
+          pwd 
+          rest_api_id=$(aws apigateway import-rest-api --cli-binary-format raw-in-base64-out --region ${{inputs.aws_region}} --no-fail-on-warnings --parameters endpointConfigurationTypes=REGIONAL --body 'file://${{ inputs.openapi_file_path }}' | jq ."id" | tr -d '"')
+          echo "next creating $branch_name stage & ${{inputs.service_name}}.trella.dev , then associating them..."
+          aws apigateway create-deployment --rest-api-id ${rest_api_id[0]} --stage-name $branch_name 
+          # adding waf to stage 
+          # aws apigateway update-stage --rest-api-id "${rest_api_id[0]}" --stage-name $branch_name --patch-operations op=replace,path=/webAclArn,value=${waf_arn}
+          aws apigateway create-domain-name --domain-name "${{inputs.service_name}}.trella.dev"\
+          --regional-certificate-arn ${{inputs.certificat_arn}} --endpoint-configuration=types=REGIONAL 
+          aws apigateway create-base-path-mapping --domain-name "${{inputs.service_name}}.trella.dev" --rest-api-id "${rest_api_id[0]}" --stage $branch_name
+         fi
+      - name: Manage APIG resources in prod
+        shell: bash
+        if: github.ref == 'refs/heads/master'
+        run: |
+         # check if api exists 
+         rest_api_id=$(aws apigateway get-rest-apis --query 'items[?name==`${{inputs.service_name}}`].id'| tr -d '"'| tr -d '['| tr -d ']'| tr -d '\n'|  tr -d '\r')
+         echo $rest_api_id
+         branch_name=$(echo ${{github.ref}} | cut -f 3 -d '/')
+         if [[ -n "$rest_api_id" ]]; then
+          echo "API already exists just overwriting paths..."
+          aws apigateway put-rest-api --rest-api-id ${rest_api_id[0]} --region ${{inputs.aws_region}} --cli-binary-format raw-in-base64-out  --no-fail-on-warnings --mode overwrite --body 'file://${{ inputs.openapi_file_path }}' 
+          echo "API paths are overwritten , updating the $branch_name stage ..."
+          aws apigateway create-deployment --rest-api-id ${rest_api_id[0]} --stage-name $branch_name 
+         else
+          echo "${{inputs.service_name}} is not found in the current environment , creating..."
+          pwd 
+          rest_api_id=$(aws apigateway import-rest-api --cli-binary-format raw-in-base64-out --region ${{inputs.aws_region}} --no-fail-on-warnings --parameters endpointConfigurationTypes=REGIONAL --body 'file://${{ inputs.openapi_file_path }}' | jq ."id" | tr -d '"')
+          echo "next creating $branch_name stage & ${{inputs.service_name}}.trellaservices.com , then associating them..."
+          aws apigateway create-deployment --rest-api-id ${rest_api_id[0]} --stage-name $branch_name 
+          aws apigateway create-domain-name --domain-name "${{inputs.service_name}}.trellaservices.com"\
+          --regional-certificate-arn ${{inputs.certificat_arn}} --endpoint-configuration=types=REGIONAL 
+          aws apigateway create-base-path-mapping --domain-name "${{inputs.service_name}}.trellaservices.com" --rest-api-id "${rest_api_id[0]}" --stage $branch_name
+         fi
+          # adding waf to stage 
+          # aws apigateway update-stage --rest-api-id ${rest_api_id[0]} --stage-name $branch_name --patch-operations op=replace,path=/~1resourceName/GET/logging/dataTrace,value=false
