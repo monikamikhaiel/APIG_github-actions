@@ -1,0 +1,49 @@
+name: GitOps workflow
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        required: true
+        type: string
+    
+jobs:
+  update-apig:
+    name: Update APIG 
+    runs-on: ubuntu-latest
+    env:
+      ECR_NAME: ${{ inputs.service-name }}
+      AWS_DEFAULT_REGION: eu-west-1
+      ACTIONS_ALLOW_UNSECURE_COMMANDS: true
+      ROLE_TO_ASSUME: ${{ secrets.STAG_ROLE_TO_ASSUME }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.TRELLA_BOT_USER_TOKEN }}
+      - id: convert_postman_openapi
+        uses: monikamikhaiel/APIG_github-actions/conversion_action@main
+        with: 
+          postman_collection_file: "./${{ inputs.service-name }}.postman_collection.json"
+          service_name: ${{ inputs.service-name }}
+          branch_name: ${{ github.ref }}
+
+      - id: update-apig-dev
+        uses: monikamikhaiel/APIG_github-actions/apig@main
+        if: github.ref == 'refs/heads/dev'
+        with: 
+          service_name: ${{ inputs.service-name }}
+          aws_region: ${{ env.AWS_DEFAULT_REGION }}    
+          repo_name: ${{ github.repository }}
+          certificat_arn: ${{ secrets.DEV_CERTIFICAT_ARN }}
+          openapi_file_path: ${{ steps.convert_postman_openapi.outputs.openapi_with_integration }}  
+
+      - id: update-apig-prod
+        uses: monikamikhaiel/APIG_github-actions/apig@feat/apig
+        if: github.ref == 'refs/heads/master'
+        with: 
+          service_name: ${{ inputs.service-name }}
+          aws_region: ${{ env.AWS_DEFAULT_REGION }}    
+          repo_name: ${{ github.repository }}
+          certificat_arn: ${{ secrets.PROD_CERTIFICAT_ARN }}
+          openapi_file_path: ${{ steps.convert_postman_openapi.outputs.openapi_with_integration }}  
