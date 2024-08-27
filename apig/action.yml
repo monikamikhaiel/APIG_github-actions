@@ -23,13 +23,13 @@ runs:
         uses: aws-actions/configure-aws-credentials@v1
         if: github.ref == 'refs/heads/master'
         with:
-          role-to-assume: arn:aws:iam::063605733848:role/github-actions-apig-role
+          role-to-assume: arn:aws:iam::**********:role/github-actions-apig-role
           aws-region: ${{ inputs.aws_region }}
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
         if: github.ref == 'refs/heads/dev'
         with:
-          role-to-assume: arn:aws:iam::653511765142:role/github-actions-apig-role
+          role-to-assume: arn:aws:iam::**********:role/github-actions-apig-role
           aws-region: ${{ inputs.aws_region }}        
 
       - name: Manage APIG resources in preprod
