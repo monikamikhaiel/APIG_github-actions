@@ -32,8 +32,8 @@ postmanToOpenApi(postmanCollection, outputFilePath, { defaultTag: 'General' })
             var integrationConfig_dev =  {
               type: "http",
               httpMethod: method.toUpperCase(),
-              uri: "https://staging.trella.dev/"+service_name+ path, 
-              connectionId: "s7zsvv",
+              uri: "https://MAIN_DOMAIN_NAME_DEV/"+service_name+ path, 
+              connectionId: "******",
               responses: {
                 default: {
                   statusCode: "200"
@@ -45,7 +45,7 @@ postmanToOpenApi(postmanCollection, outputFilePath, { defaultTag: 'General' })
             var integrationConfig_prod =  {
               type: "http",
               httpMethod: method.toUpperCase(),
-              uri: "https://prod.trella.dev/"+service_name+ path, 
+              uri: "https://MAIN_DOMAIN_NAME_PROD/"+service_name+ path, 
               connectionId: "NOTDEFINEDYET",
               responses: {
                 default: {
